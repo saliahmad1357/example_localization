@@ -1,0 +1,21 @@
+- UX/UI design
+  ->customer app flow       $500
+  ->rider or driver flow    $500
+  ->Admin panel flow        $800
+- Database design           $1500
+- Api Development (Backend) $4000
+- Frontend design (Admin Panel) $3000
+- Api integration with Admin Panel $ 1500
+- Android App design Customer $2500
+- IOS App design Customer $3000
+- windows App design Customer $2500
+- Android App design Rider $2500
+- iOS App design Rider $3000
+- windows App design Rider $2500
+- Android App API integration $2500
+- IOS App API integration $2500
+- windows App API integration $2500
+- API hosting $500
+- App upload to play store, App Store, Window Store $500
+- landing Page design  $100
+- landing Page hosting $100
