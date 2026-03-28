@@ -40,5 +40,16 @@
   "friday": "Friday",
   "saturday": "Saturday",
   "sunday": "Sunday",
-  "dayOfWeek": "Day of the Week"
+  "dayOfWeek": "Day of the Week",
+  "userProfileTitle": "User Profile",
+  "appSettingsTitle": "App Settings",
+  "languageOptionTitle": "Language",
+  "userNameLabel": "Name",
+  "userEmailLabel": "Email",
+  "userPhoneLabel": "Phone",
+  "memberSinceLabel": "Member since",
+  "noTasksForEvaluation": "No tasks found for this evaluation.",
+  "evaluationInstruction": "Mark the tasks you completed successfully.",
+  "submitEvaluation": "Submit Evaluation",
+  "evaluationSaved": "Evaluation saved successfully!"
 }

@@ -6,6 +6,9 @@ import '../services/isarService.dart';
 final userProvider =
     AsyncNotifierProvider<UserNotifier, List<UserIsar>>(UserNotifier.new);
 
+final currentUserProvider = Provider<AsyncValue<UserIsar?>>((ref) {
+  return ref.watch(userProvider).whenData((users) => users.isNotEmpty ? users.first : null);
+});
 
 class UserNotifier extends AsyncNotifier<List<UserIsar>> {
   @override
@@ -21,6 +24,14 @@ class UserNotifier extends AsyncNotifier<List<UserIsar>> {
     });
 
     return users;
+  }
+
+  Future<void> refreshUser() async {
+    state = const AsyncLoading();
+    final isar = ref.read(isarServiceProvider);
+    final db = await isar.db;
+    final users = await db.userIsars.where().findAll();
+    state = AsyncData(users);
   }
 
   Future<void> addUser(UserIsar user) async {

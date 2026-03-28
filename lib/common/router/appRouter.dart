@@ -1,11 +1,13 @@
 import 'package:example_localization/common/router/routesName.dart';
 import 'package:example_localization/screens/navigationScreens/analyticScreen.dart';
 import 'package:example_localization/screens/navigationScreens/taskScreen/screens/addTaskScreen.dart';
+import 'package:example_localization/screens/navigationScreens/taskScreen/screens/performEvaluationScreen.dart';
 import 'package:example_localization/screens/profileScreen.dart';
 import 'package:example_localization/screens/navigationScreens/taskScreen/taskScreen.dart';
 import 'package:go_router/go_router.dart';
 
 import '../../models/isar/taskIsar.dart';
+import '../../models/isar/evaluationIsar.dart';
 import '../../screens/navigationScreens/homeScreen.dart';
 import '../../screens/mainScreen.dart';
 import '../../screens/notificationScreen.dart';
@@ -61,6 +63,13 @@ class AppRouter {
         builder: (context, state) {
           final task = state.extra as TaskIsar?;
           return AddTaskScreen(task: task);
+        },
+      ),
+      GoRoute(
+        path: performEvaluationRoute,
+        builder: (context, state) {
+          final evaluation = state.extra as EvaluationIsar;
+          return PerformEvaluationScreen(evaluation: evaluation);
         },
       ),
     ],

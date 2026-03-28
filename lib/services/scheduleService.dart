@@ -153,6 +153,7 @@ class SchedulerService {
       scheduledDateTime: scheduled,
       soundResourceName: sound,
       repeatComponents: repeat,
+      payload: "eval_${eval.id}",
     );
   }
 
@@ -160,11 +161,13 @@ class SchedulerService {
   // ❌ CANCEL METHODS (you asked for this)
   // ---------------------------------------------------------
   Future<void> cancelTask(int id) async {
+    print("🗑️ Canceling notification for task ID: $id");
     await _ns.init();
     await _ns.cancel(id);
   }
 
   Future<void> cancelEvaluation(int id) async {
+    print("🗑️ Canceling notification for evaluation ID: $id (System ID: ${50000 + id})");
     await _ns.init();
     await _ns.cancel(50000 + id);
   }
@@ -173,6 +176,7 @@ class SchedulerService {
   // 🔄 RESCHEDULE ALL (WorkManager uses this)
   // ---------------------------------------------------------
   Future<void> rescheduleAll() async {
+    print("🔄 Rescheduling all notifications...");
     await _ns.init();
 
     final isar = await IsarService().db;
@@ -184,16 +188,23 @@ class SchedulerService {
 
     final evals = await isar.evaluationIsars.where().findAll();
 
+    print("Found ${evals.length} evaluations and ${tasks.length} active tasks to schedule.");
+
     for (final e in evals) {
       try {
         await scheduleEvaluation(e);
-      } catch (_) {}
+      } catch (err) {
+        print("❌ Failed to schedule evaluation ${e.id}: $err");
+      }
     }
 
     for (final t in tasks) {
       try {
         await scheduleTask(t);
-      } catch (_) {}
+      } catch (err) {
+        print("❌ Failed to schedule task ${t.id}: $err");
+      }
     }
+    print("✅ Finished rescheduling all.");
   }
 }

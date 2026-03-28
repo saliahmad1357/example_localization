@@ -1,30 +1,36 @@
+import 'dart:async';
 import 'dart:io';
 
 import 'package:flutter_local_notifications/flutter_local_notifications.dart';
-import 'package:flutter_native_timezone_updated_gradle/flutter_native_timezone.dart';
+import 'package:flutter_timezone/flutter_timezone.dart';
 import 'package:permission_handler/permission_handler.dart';
 import 'package:timezone/data/latest.dart' as tz;
 import 'package:timezone/timezone.dart' as tz;
 
-/// NotificationService singleton: initialize once and schedule/show notifications.
 class NotificationService {
   static final NotificationService _instance = NotificationService._internal();
   factory NotificationService() => _instance;
   NotificationService._internal();
 
-  final FlutterLocalNotificationsPlugin _plugin =
-      FlutterLocalNotificationsPlugin();
-
+  final FlutterLocalNotificationsPlugin _plugin = FlutterLocalNotificationsPlugin();
   bool _initialized = false;
-  bool get isInitialized => _initialized;
+
+  final _notificationStreamController = StreamController<String>.broadcast();
+  Stream<String> get notificationStream => _notificationStreamController.stream;
 
   Future<void> init() async {
     if (_initialized) return;
 
     // 1. init timezones
     tz.initializeTimeZones();
-    final String timeZoneName = await FlutterNativeTimezone.getLocalTimezone();
-    tz.setLocalLocation(tz.getLocation(timeZoneName));
+    try {
+      final String timeZoneName = await FlutterTimezone.getLocalTimezone();
+      print("Local timezone found: $timeZoneName");
+      tz.setLocalLocation(tz.getLocation(timeZoneName));
+    } catch (e) {
+      print("⚠️ Warning: Could not get local timezone, falling back to UTC: $e");
+      tz.setLocalLocation(tz.getLocation('UTC'));
+    }
 
     // 2. init plugin
     const androidIni = AndroidInitializationSettings('@mipmap/ic_launcher');
@@ -36,10 +42,12 @@ class NotificationService {
 
     await _plugin.initialize(
       const InitializationSettings(android: androidIni, iOS: iosIni),
-      // Optional: handle tap on notification
-      // onDidReceiveNotificationResponse: (NotificationResponse response) {
-      //   // handle navigation etc.
-      // },
+      onDidReceiveNotificationResponse: (NotificationResponse response) {
+        if (response.payload != null) {
+          print("🔔 Notification tapped with payload: ${response.payload}");
+          _instance._notificationStreamController.add(response.payload!);
+        }
+      },
     );
 
     // 3. Android exact alarm permission (Android 12+)
@@ -53,27 +61,30 @@ class NotificationService {
             await androidImplementation.canScheduleExactNotifications();
 
         if (hasPermission != true) {
-          print("Exact alarm permission not granted. Requesting...");
+          print("⚠️ Exact alarm permission not granted. Requesting...");
           await androidImplementation.requestExactAlarmsPermission();
+        } else {
+          print("✅ Exact alarm permission granted.");
         }
       }
     }
 
     _initialized = true;
+    print("✅ NotificationService initialized successfully.");
   }
 
-  /// Call at app start or before first schedule to ensure POST_NOTIFICATIONS is granted.
   Future<bool> requestPermission() async {
     if (Platform.isAndroid) {
-      // Android 13+
       if (await Permission.notification.isDenied ||
           await Permission.notification.isPermanentlyDenied) {
         final status = await Permission.notification.request();
+        print("Notification permission status: $status");
         return status.isGranted;
       }
       return true;
     } else if (Platform.isIOS) {
       final status = await Permission.notification.request();
+      print("Notification permission status: $status");
       return status.isGranted;
     }
     return true;
@@ -84,8 +95,11 @@ class NotificationService {
     required String title,
     required String body,
     required String soundResourceName,
+    String? payload,
   }) async {
     await init();
+
+    print("🔔 Showing instant notification: ID=$id, Sound=$soundResourceName");
 
     final androidDetails = AndroidNotificationDetails(
       'instant_channel',
@@ -103,7 +117,11 @@ class NotificationService {
     final details =
         NotificationDetails(android: androidDetails, iOS: iosDetails);
 
-    await _plugin.show(id, title, body, details);
+    try {
+      await _plugin.show(id, title, body, details, payload: payload);
+    } catch (e) {
+      print("❌ Error showing instant notification: $e");
+    }
   }
 
   Future<void> schedule({
@@ -113,30 +131,25 @@ class NotificationService {
     required DateTime scheduledDateTime,
     required String soundResourceName,
     DateTimeComponents? repeatComponents,
+    String? payload,
   }) async {
     await init();
 
-    // Make sure scheduledDateTime is in the future
-    final now = DateTime.now();
-    if (scheduledDateTime.isBefore(now)) {
-      print("⚠️ scheduledDateTime is in the past, adjusting +1 minute.");
-      scheduledDateTime = now.add(const Duration(minutes: 1));
-    }
+    print("📅 Scheduling notification: ID=$id, Time=$scheduledDateTime, Sound=$soundResourceName, Repeat=$repeatComponents");
 
-    // Unique channel per sound type
-    final String channelId = "channel_v1_$soundResourceName";
+    final String channelId = "channel_v2_$soundResourceName";
 
     final androidDetails = AndroidNotificationDetails(
       channelId,
       'Task Notifications',
-      channelDescription: 'Notifications with $soundResourceName',
+      channelDescription: 'Notifications with custom sounds',
       importance: Importance.max,
       priority: Priority.high,
       playSound: true,
       sound: RawResourceAndroidNotificationSound(soundResourceName),
-      // If you want full-screen alarm-like behavior on Android, add:
-      // fullScreenIntent: true,
-      // category: AndroidNotificationCategory.alarm,
+      enableVibration: true,
+      fullScreenIntent: true,
+      category: AndroidNotificationCategory.reminder,
     );
 
     final iosDetails = DarwinNotificationDetails(
@@ -148,48 +161,58 @@ class NotificationService {
 
     final details = NotificationDetails(android: androidDetails, iOS: iosDetails);
 
-    final tzTime = tz.TZDateTime.from(scheduledDateTime, tz.local);
-
-    await _plugin.zonedSchedule(
-      id,
-      title,
-      body,
-      tzTime,
-      details,
-      androidScheduleMode: AndroidScheduleMode.exactAllowWhileIdle,
-      uiLocalNotificationDateInterpretation:
-          UILocalNotificationDateInterpretation.absoluteTime,
-      matchDateTimeComponents: repeatComponents,
-      androidAllowWhileIdle: true, // ignore: deprecated_member_use
+    final tzTime = tz.TZDateTime(
+      tz.local,
+      scheduledDateTime.year,
+      scheduledDateTime.month,
+      scheduledDateTime.day,
+      scheduledDateTime.hour,
+      scheduledDateTime.minute,
+      scheduledDateTime.second,
     );
+
+    try {
+      await _plugin.zonedSchedule(
+        id,
+        title,
+        body,
+        tzTime,
+        details,
+        androidScheduleMode: AndroidScheduleMode.exactAllowWhileIdle,
+        uiLocalNotificationDateInterpretation:
+            UILocalNotificationDateInterpretation.wallClockTime,
+        matchDateTimeComponents: repeatComponents,
+        payload: payload,
+      );
+      print("🚀 Notification $id scheduled successfully for $tzTime");
+    } catch (e) {
+      print("❌ CRITICAL ERROR: Failed to schedule notification $id: $e");
+      if (e.toString().contains("exact_alarm")) {
+        print("🔄 Retrying with inexact schedule mode...");
+        await _plugin.zonedSchedule(
+          id,
+          title,
+          body,
+          tzTime,
+          details,
+          androidScheduleMode: AndroidScheduleMode.inexactAllowWhileIdle,
+          uiLocalNotificationDateInterpretation:
+              UILocalNotificationDateInterpretation.wallClockTime,
+          matchDateTimeComponents: repeatComponents,
+          payload: payload,
+        );
+      }
+    }
   }
 
   Future<void> showTestNotification() async {
-    await init();
-
-    const androidDetails = AndroidNotificationDetails(
-      'task_channel',
-      'Task Notifications',
-      channelDescription: 'Task reminders',
-      importance: Importance.max,
-      priority: Priority.high,
-    );
-
-    const iosDetails = DarwinNotificationDetails();
-
-    const details = NotificationDetails(
-      android: androidDetails,
-      iOS: iosDetails,
-    );
-
-    await _plugin.show(
-      1,
-      'Task Reminder',
-      'This is a test notification',
-      details,
+    await showInstant(
+      id: 999,
+      title: 'Goal Getter Test',
+      body: 'Notifications are working! 🎉',
+      soundResourceName: 'notification',
     );
   }
 
   Future<void> cancel(int id) => _plugin.cancel(id);
-  Future<void> cancelAll() => _plugin.cancelAll();
 }

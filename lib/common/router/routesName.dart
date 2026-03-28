@@ -12,3 +12,4 @@ const frequencyDetailsRoute = '/frequencyDetails';
 const evaluationDetailsRoute = '/evaluationDetails';
 const scoreDetailsRoute = '/scoreDetails';
 const addTaskRoute = '/addTask';
+const performEvaluationRoute = '/performEvaluation';

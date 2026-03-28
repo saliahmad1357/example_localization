@@ -23,7 +23,9 @@ dependencies:
   timezone: ^0.9.3
   workmanager: ^0.5.2
   audioplayers: ^5.2.1
+  shared_preferences: ^2.5.3
   permission_handler: ^11.3.0
+  flutter_timezone: ^3.0.0
 
 dev_dependencies:
   flutter_test:

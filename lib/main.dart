@@ -23,7 +23,8 @@ void main() async {
 
   final notif = NotificationService();
   await notif.init();
-  await notif.requestPermission();
+  // Don't await permission request in main, it will show a dialog on top of the splash screen
+  notif.requestPermission();
 
   final isarService = IsarService();
   await isarService.db;
@@ -45,10 +46,12 @@ void main() async {
     ),
   );
 
-  // === Run an immediate reschedule on app start ===
+  // === Run maintenance and rescheduling in background without blocking runApp ===
   final scheduler = SchedulerService();
-  await scheduler.rescheduleAll();
-  await isarService.ensureMissingScoresFilled();
+  Future.microtask(() async {
+    await scheduler.rescheduleAll();
+    await isarService.ensureMissingScoresFilled();
+  });
 
   runApp(
     EasyLocalization(

@@ -2,8 +2,11 @@ import 'package:easy_localization/easy_localization.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
-
+import 'package:example_localization/common/router/routesName.dart';
+import 'package:example_localization/providers/evaluationProvider.dart';
+import 'package:example_localization/services/notificationService.dart';
 import '../main.dart';
+import 'dart:async';
 
 class MainScreen extends ConsumerStatefulWidget {
   final Widget child;
@@ -14,6 +17,36 @@ class MainScreen extends ConsumerStatefulWidget {
 }
 
 class _MainScreenState extends ConsumerState<MainScreen> {
+  StreamSubscription? _notifSubscription;
+
+  @override
+  void initState() {
+    super.initState();
+    _listenToNotifications();
+  }
+
+  @override
+  void dispose() {
+    _notifSubscription?.cancel();
+    super.dispose();
+  }
+
+  void _listenToNotifications() {
+    _notifSubscription = NotificationService().notificationStream.listen((payload) async {
+      print("🎯 MainScreen handling notification: $payload");
+      if (payload.startsWith('eval_')) {
+        final idStr = payload.replaceFirst('eval_', '');
+        final id = int.tryParse(idStr);
+        if (id != null) {
+          final evaluations = await ref.read(evaluationProvider.future);
+          final eval = evaluations.firstWhere((e) => e.id == id);
+          if (mounted) {
+            context.push(performEvaluationRoute, extra: eval);
+          }
+        }
+      }
+    });
+  }
   @override
   Widget build(BuildContext context) {
     // ✅ Watch locale changes so UI rebuilds automatically
