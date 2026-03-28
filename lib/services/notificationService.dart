@@ -1,6 +1,7 @@
 import 'dart:io';
 
 import 'package:flutter_local_notifications/flutter_local_notifications.dart';
+import 'package:flutter_native_timezone_updated_gradle/flutter_native_timezone.dart';
 import 'package:permission_handler/permission_handler.dart';
 import 'package:timezone/data/latest.dart' as tz;
 import 'package:timezone/timezone.dart' as tz;
@@ -15,13 +16,17 @@ class NotificationService {
       FlutterLocalNotificationsPlugin();
 
   bool _initialized = false;
-  bool get isInitialized => _initialized; // ✅ add this getter
+  bool get isInitialized => _initialized;
 
   Future<void> init() async {
     if (_initialized) return;
 
+    // 1. init timezones
     tz.initializeTimeZones();
+    final String timeZoneName = await FlutterNativeTimezone.getLocalTimezone();
+    tz.setLocalLocation(tz.getLocation(timeZoneName));
 
+    // 2. init plugin
     const androidIni = AndroidInitializationSettings('@mipmap/ic_launcher');
     const iosIni = DarwinInitializationSettings(
       requestAlertPermission: true,
@@ -31,29 +36,47 @@ class NotificationService {
 
     await _plugin.initialize(
       const InitializationSettings(android: androidIni, iOS: iosIni),
+      // Optional: handle tap on notification
+      // onDidReceiveNotificationResponse: (NotificationResponse response) {
+      //   // handle navigation etc.
+      // },
     );
 
+    // 3. Android exact alarm permission (Android 12+)
     if (Platform.isAndroid) {
       final AndroidFlutterLocalNotificationsPlugin? androidImplementation =
           _plugin.resolvePlatformSpecificImplementation<
               AndroidFlutterLocalNotificationsPlugin>();
 
       if (androidImplementation != null) {
-// Note: This only checks if the user has granted the permission.
-// It does not handle the initial app-level POST_NOTIFICATIONS permission.
         final bool? hasPermission =
             await androidImplementation.canScheduleExactNotifications();
 
         if (hasPermission != true) {
-// IMPORTANT: The requestPermission() method will attempt to open the
-// device's settings page for your app, where the user can grant the permission.
-// You should inform the user before calling this.
           print("Exact alarm permission not granted. Requesting...");
           await androidImplementation.requestExactAlarmsPermission();
         }
       }
     }
+
     _initialized = true;
+  }
+
+  /// Call at app start or before first schedule to ensure POST_NOTIFICATIONS is granted.
+  Future<bool> requestPermission() async {
+    if (Platform.isAndroid) {
+      // Android 13+
+      if (await Permission.notification.isDenied ||
+          await Permission.notification.isPermanentlyDenied) {
+        final status = await Permission.notification.request();
+        return status.isGranted;
+      }
+      return true;
+    } else if (Platform.isIOS) {
+      final status = await Permission.notification.request();
+      return status.isGranted;
+    }
+    return true;
   }
 
   Future<void> showInstant({
@@ -62,6 +85,8 @@ class NotificationService {
     required String body,
     required String soundResourceName,
   }) async {
+    await init();
+
     final androidDetails = AndroidNotificationDetails(
       'instant_channel',
       'Instant Notifications',
@@ -82,50 +107,66 @@ class NotificationService {
   }
 
   Future<void> schedule({
-  required int id,
-  required String title,
-  required String body,
-  required DateTime scheduledDateTime,
-  required String soundResourceName, // This will be 'daily_sound', etc.
-  DateTimeComponents? repeatComponents,
-}) async {
-  
-  // Create a unique channel for each sound type to avoid "sound locking"
-  final String channelId = "channel_v1_$soundResourceName"; 
+    required int id,
+    required String title,
+    required String body,
+    required DateTime scheduledDateTime,
+    required String soundResourceName,
+    DateTimeComponents? repeatComponents,
+  }) async {
+    await init();
 
-  final androidDetails = AndroidNotificationDetails(
-    channelId,
-    'Task Notifications',
-    channelDescription: 'Notifications with $soundResourceName',
-    importance: Importance.max,
-    priority: Priority.high,
-    playSound: true,
-    // Note: Do NOT include .mp3 extension here
-    sound: RawResourceAndroidNotificationSound(soundResourceName),
-  );
+    // Make sure scheduledDateTime is in the future
+    final now = DateTime.now();
+    if (scheduledDateTime.isBefore(now)) {
+      print("⚠️ scheduledDateTime is in the past, adjusting +1 minute.");
+      scheduledDateTime = now.add(const Duration(minutes: 1));
+    }
 
-  final iosDetails = DarwinNotificationDetails(
-    sound: '$soundResourceName.caf', // iOS uses the .caf files
-    presentAlert: true,
-    presentSound: true,
-    presentBadge: true,
-  );
+    // Unique channel per sound type
+    final String channelId = "channel_v1_$soundResourceName";
 
-  final details = NotificationDetails(android: androidDetails, iOS: iosDetails);
+    final androidDetails = AndroidNotificationDetails(
+      channelId,
+      'Task Notifications',
+      channelDescription: 'Notifications with $soundResourceName',
+      importance: Importance.max,
+      priority: Priority.high,
+      playSound: true,
+      sound: RawResourceAndroidNotificationSound(soundResourceName),
+      // If you want full-screen alarm-like behavior on Android, add:
+      // fullScreenIntent: true,
+      // category: AndroidNotificationCategory.alarm,
+    );
 
-  await _plugin.zonedSchedule(
-    id,
-    title,
-    body,
-    tz.TZDateTime.from(scheduledDateTime, tz.local),
-    details,
-    // Use exactAllowWhileIdle to ensure it rings even in power-saving mode
-    androidScheduleMode: AndroidScheduleMode.exactAllowWhileIdle,
-    uiLocalNotificationDateInterpretation: UILocalNotificationDateInterpretation.absoluteTime,
-    matchDateTimeComponents: repeatComponents,
-  );
-}
+    final iosDetails = DarwinNotificationDetails(
+      sound: '$soundResourceName.caf',
+      presentAlert: true,
+      presentSound: true,
+      presentBadge: true,
+    );
+
+    final details = NotificationDetails(android: androidDetails, iOS: iosDetails);
+
+    final tzTime = tz.TZDateTime.from(scheduledDateTime, tz.local);
+
+    await _plugin.zonedSchedule(
+      id,
+      title,
+      body,
+      tzTime,
+      details,
+      androidScheduleMode: AndroidScheduleMode.exactAllowWhileIdle,
+      uiLocalNotificationDateInterpretation:
+          UILocalNotificationDateInterpretation.absoluteTime,
+      matchDateTimeComponents: repeatComponents,
+      androidAllowWhileIdle: true, // ignore: deprecated_member_use
+    );
+  }
+
   Future<void> showTestNotification() async {
+    await init();
+
     const androidDetails = AndroidNotificationDetails(
       'task_channel',
       'Task Notifications',
@@ -149,15 +190,6 @@ class NotificationService {
     );
   }
 
-
-  Future<bool> requestPermission() async {
-    // Android 13+
-    if (await Permission.notification.isDenied) {
-      final status = await Permission.notification.request();
-      return status.isGranted;
-    }
-    return true;
-  }
   Future<void> cancel(int id) => _plugin.cancel(id);
   Future<void> cancelAll() => _plugin.cancelAll();
 }

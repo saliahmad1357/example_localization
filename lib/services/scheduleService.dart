@@ -74,7 +74,12 @@ class SchedulerService {
     }
 
     if (candidate.isBefore(now)) {
-      candidate = DateTime(now.year, now.month + 1, day, hour, minute);
+      try {
+        candidate = DateTime(now.year, now.month + 1, day, hour, minute);
+      } catch (_) {
+        final end = DateTime(now.year, now.month + 2, 0);
+        candidate = DateTime(end.year, end.month, end.day, hour, minute);
+      }
     }
 
     return candidate;
@@ -155,14 +160,14 @@ class SchedulerService {
   // ❌ CANCEL METHODS (you asked for this)
   // ---------------------------------------------------------
   Future<void> cancelTask(int id) async {
-  await _ns.init();
-  await _ns.cancel(id);
-}
+    await _ns.init();
+    await _ns.cancel(id);
+  }
 
-Future<void> cancelEvaluation(int id) async {
-  await _ns.init();
-  await _ns.cancel(50000 + id);
-}
+  Future<void> cancelEvaluation(int id) async {
+    await _ns.init();
+    await _ns.cancel(50000 + id);
+  }
 
   // ---------------------------------------------------------
   // 🔄 RESCHEDULE ALL (WorkManager uses this)
